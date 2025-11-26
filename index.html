@@ -392,11 +392,25 @@
     function renderMap(features) {
         state.layer = L.geoJSON(features, {
             pointToLayer: (feature, latlng) => {
-                return L.circleMarker(latlng, {
+                // C'est ici que l'on ajoute la zone de clic étendue
+                // 1. Le marqueur VISIBLE (petit point précis)
+                const visibleMarker = L.circleMarker(latlng, {
                     radius: 7,
                     fillColor: getColor(feature.properties._currentProg),
-                    color: "#FFF", weight: 1.5, opacity: 1, fillOpacity: 0.9
+                    color: "#FFF", weight: 1.5, opacity: 1, fillOpacity: 0.9,
+                    interactive: false // On ne clique pas sur lui, mais sur le "fantôme"
                 });
+
+                // 2. Le marqueur FANTÔME (grande zone invisible pour le clic)
+                const hitArea = L.circleMarker(latlng, {
+                    radius: 25, // Zone de clic très confortable (25px de rayon)
+                    stroke: false,
+                    fillOpacity: 0, // Invisible
+                    interactive: true
+                });
+
+                // On retourne un groupe contenant les deux
+                return L.layerGroup([visibleMarker, hitArea]);
             },
             style: (feature) => {
                 // Si c'est une ligne ou un polygone
@@ -424,14 +438,28 @@
                         <div class="lw-popup-tag" style="background:${color}">Avancement : ${p._currentProg}%</div>
                     </div>
                 `;
-                layer.bindPopup(content);
                 
-                layer.on('mouseover', function() { 
-                    if(this.setStyle) this.setStyle({ weight: 7, opacity: 1, fillOpacity: 1, radius: 9 }); 
-                });
-                layer.on('mouseout', function() { 
-                    if(this.setStyle) this.setStyle({ weight: 4, opacity: 0.8, fillOpacity: 0.9, radius: 7 }); 
-                });
+                // Si c'est un LayerGroup (notre hack avec le fantôme), il faut attacher le popup au fantôme
+                if (layer.getLayers) {
+                    const layers = layer.getLayers();
+                    const visible = layers[0];
+                    const hitArea = layers[1];
+
+                    hitArea.bindPopup(content);
+                    
+                    // Effet de survol : on change le style du marqueur VISIBLE quand on survole le FANTÔME
+                    hitArea.on('mouseover', function() { 
+                        visible.setStyle({ weight: 3, radius: 9, fillOpacity: 1 }); 
+                    });
+                    hitArea.on('mouseout', function() { 
+                        visible.setStyle({ weight: 1.5, radius: 7, fillOpacity: 0.9 }); 
+                    });
+                } else {
+                    // Cas classique (polygones/lignes)
+                    layer.bindPopup(content);
+                    layer.on('mouseover', function() { this.setStyle({ weight: 7, opacity: 1 }); });
+                    layer.on('mouseout', function() { this.setStyle({ weight: 4, opacity: 0.8 }); });
+                }
             }
         }).addTo(state.map);
     }

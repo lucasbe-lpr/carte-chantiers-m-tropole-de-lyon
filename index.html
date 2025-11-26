@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Carte des Chantiers - Métropole de Lyon</title>
+
+  <!-- Leaflet CSS & JS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  
+  <!-- Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet"/>
+
+  <style>
+    /* ==================================================================
+       NAMESPACE #lyon-widget (Base commune SaintéLyon)
+    ================================================================== */
+    #lyon-widget {
+      --lw-bg: #FFFFFF; --lw-bg-alt: #F8F9FA; --lw-text: #212529; --lw-muted: #6C757D;
+      --lw-accent: #212529; --lw-orange: #E65100; --lw-border: #DEE2E6; --lw-radius: 8px;
+      --lw-font-main: 'Roboto', sans-serif; --lw-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      --lw-switch-active: var(--lw-orange);
+    }
+    #lyon-widget.lw-dark {
+        --lw-bg: #1A1A1A; --lw-bg-alt: #252525; --lw-text: #E9ECEF; --lw-muted: #ADB5BD;
+        --lw-accent: #FFFFFF; --lw-border: #343A40; --lw-shadow: 0 4px 20px rgba(0,0,0,0.4);
+    }
+
+    /* PALETTES DE COULEURS (Specifique Chantiers) */
+    .lw-default-c0 { background-color: #E33633; border-color: #B71C1C; } /* Rouge - Début */
+    .lw-default-c1 { background-color: #FF8800; border-color: #E65100; } /* Orange */
+    .lw-default-c2 { background-color: #FFD700; border-color: #FBC02D; } /* Jaune */
+    .lw-default-c3 { background-color: #00B050; border-color: #007E33; } /* Vert */
+    .lw-default-c4 { background-color: #30A5C8; border-color: #0277BD; } /* Bleu - Fin */
+
+    /* RESET GLOBAL */
+    html, body { height: 100%; width: 100%; margin: 0; padding: 0; overflow: hidden; background-color: transparent; }
+    
+    /* CONTENEUR PRINCIPAL (100% hauteur/largeur) */
+    #lyon-widget {
+        font-family: var(--lw-font-main); color: var(--lw-text);
+        width: 100%; height: 100%;
+        display: flex; flex-direction: column;
+        padding: 6px; box-sizing: border-box;
+        overflow: hidden;
+    }
+
+    /* CARTE VISUELLE (Le cadre arrondi) */
+    #lyon-widget .lw-card {
+        background-color: var(--lw-bg); border-radius: var(--lw-radius);
+        box-shadow: var(--lw-shadow); display: flex; flex-direction: column;
+        flex: 1; overflow: hidden; position: relative;
+    }
+
+    /* HEADER */
+    #lyon-widget header { padding: 12px 15px; border-bottom: 1px solid var(--lw-border); background-color: var(--lw-bg); flex-shrink: 0; }
+    #lyon-widget h1 { font-size: 20px; font-weight: 700; color: var(--lw-accent); margin: 0; line-height: 1.2; text-transform: uppercase; }
+    #lyon-widget .lw-subtitle { font-size: 12px; color: var(--lw-orange); font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 2px;}
+    #lyon-widget .lw-meta { font-size: 11px; color: var(--lw-muted); margin-top: 4px; display: flex; gap: 10px; }
+
+    /* CONTROLS (Filtres) */
+    #lyon-widget .lw-controls { 
+        padding: 10px 15px; background-color: var(--lw-bg-alt); 
+        border-bottom: 1px solid var(--lw-border); flex-shrink: 0;
+        display: flex; flex-direction: column; gap: 8px;
+    }
+
+    /* Dates (Pills) */
+    #lyon-widget .lw-dates { display: flex; background: var(--lw-bg); border: 1px solid var(--lw-border); border-radius: 6px; padding: 2px; }
+    #lyon-widget .lw-date-btn {
+        flex: 1; text-align: center; padding: 6px 0; font-size: 12px; font-weight: 500;
+        cursor: pointer; border-radius: 4px; color: var(--lw-muted); transition: all 0.2s; user-select: none;
+    }
+    #lyon-widget .lw-date-btn:hover { color: var(--lw-text); background-color: rgba(0,0,0,0.02); }
+    #lyon-widget .lw-date-btn.active { background-color: var(--lw-accent); color: var(--lw-bg); font-weight: 700; }
+    #lyon-widget.lw-dark .lw-date-btn.active { background-color: #FFF; color: #000; }
+
+    /* Selects */
+    #lyon-widget .lw-filters-row { display: flex; gap: 10px; }
+    #lyon-widget .lw-select-wrapper { flex: 1; min-width: 0; }
+    #lyon-widget label { display: block; font-size: 10px; font-weight: 700; color: var(--lw-muted); text-transform: uppercase; margin-bottom: 4px; }
+    #lyon-widget select {
+        width: 100%; height: 36px; font-size: 13px; padding: 0 10px;
+        border: 1px solid var(--lw-border); border-radius: 6px;
+        background-color: var(--lw-bg); color: var(--lw-text);
+        cursor: pointer; outline: none;
+        font-family: var(--lw-font-main);
+    }
+
+    /* MAP AREA (Elastique) */
+    #lyon-widget #lw-map-wrapper { position: relative; width: 100%; flex: 1; min-height: 200px; z-index: 1; }
+    #lyon-widget #lw-map { width: 100%; height: 100%; background: var(--lw-bg-alt); }
+    
+    /* Loader & Messages */
+    #lyon-widget .lw-overlay {
+        position: absolute; inset: 0; background: rgba(255,255,255,0.9); z-index: 1000;
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        gap: 10px; font-size: 13px; color: var(--lw-muted); opacity: 0; pointer-events: none; transition: opacity 0.3s;
+        text-align: center; padding: 20px;
+    }
+    #lyon-widget .lw-overlay.active { opacity: 1; pointer-events: all; }
+    #lyon-widget.lw-dark .lw-overlay { background: rgba(26,26,26,0.95); }
+    .lw-spinner { width: 24px; height: 24px; border: 3px solid var(--lw-border); border-top-color: var(--lw-orange); border-radius: 50%; animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* STATS & LEGEND BAR (Fixe en bas) */
+    #lyon-widget .lw-stats-bar { 
+        padding: 12px 15px; background: var(--lw-bg); border-top: 1px solid var(--lw-border); 
+        flex-shrink: 0; display: flex; flex-direction: column; gap: 10px;
+    }
+    
+    /* Progress Bar */
+    #lyon-widget .lw-prog-container { width: 100%; }
+    #lyon-widget .lw-prog-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+    #lyon-widget .lw-prog-title { font-size: 12px; font-weight: 500; color: var(--lw-text); }
+    #lyon-widget .lw-prog-val { font-size: 14px; font-weight: 700; color: var(--lw-orange); font-family: monospace; }
+    #lyon-widget .lw-prog-track { width: 100%; height: 6px; background: var(--lw-bg-alt); border: 1px solid var(--lw-border); border-radius: 4px; overflow: hidden; }
+    #lyon-widget .lw-prog-fill { height: 100%; background: var(--lw-orange); transition: width 0.5s ease; }
+
+    /* Legend Items */
+    #lyon-widget .lw-legend { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+    #lyon-widget .lw-pill { 
+        display: flex; align-items: center; gap: 5px; font-size: 11px; padding: 4px 10px; 
+        border-radius: 12px; background: var(--lw-bg-alt); border: 1px solid var(--lw-border);
+        cursor: pointer; transition: all 0.2s; color: var(--lw-text); user-select: none;
+    }
+    #lyon-widget .lw-pill:hover { border-color: var(--lw-orange); }
+    #lyon-widget .lw-pill.active { background: var(--lw-bg); border-color: var(--lw-text); font-weight: 700; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+    #lyon-widget .lw-pill.dimmed { opacity: 0.5; }
+    #lyon-widget .lw-dot { width: 8px; height: 8px; border-radius: 50%; }
+
+    /* FOOTER */
+    #lyon-widget footer { 
+        padding: 8px 15px; background: var(--lw-bg-alt); border-top: 1px solid var(--lw-border); 
+        display: flex; justify-content: space-between; align-items: center; font-size: 10px; color: var(--lw-muted);
+        flex-shrink: 0; 
+    }
+    
+    /* Switchs */
+    #lyon-widget .lw-toggles { display: flex; gap: 12px; }
+    #lyon-widget .lw-toggle-lbl { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+    #lyon-widget .lw-switch { position: relative; width: 24px; height: 14px; background: var(--lw-border); border-radius: 20px; transition: 0.2s; }
+    #lyon-widget .lw-switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 10px; height: 10px; border-radius: 50%; background: #FFF; transition: 0.2s; box-shadow: 0 1px 2px rgba(0,0,0,0.2); }
+    #lyon-widget input:checked + .lw-switch { background: var(--lw-orange); }
+    #lyon-widget input:checked + .lw-switch::after { transform: translateX(10px); }
+
+    /* LEAFLET POPUP CUSTOMIZATION */
+    .leaflet-popup-content-wrapper {
+        border-radius: 6px !important; box-shadow: 0 4px 15px rgba(0,0,0,0.15) !important;
+        padding: 0 !important; overflow: hidden;
+        font-family: 'Roboto', sans-serif !important;
+    }
+    .leaflet-popup-content { margin: 0 !important; width: 260px !important; }
+    
+    /* Contenu du Popup */
+    .lw-popup-header { padding: 10px 15px; background: #F8F9FA; border-bottom: 1px solid #EEE; }
+    .lw-popup-header h3 { margin: 0; font-size: 14px; font-weight: 700; color: #212529; line-height: 1.3; }
+    .lw-popup-body { padding: 12px 15px; font-size: 13px; color: #495057; line-height: 1.5; }
+    .lw-popup-row { display: flex; justify-content: space-between; margin-bottom: 6px; }
+    .lw-popup-label { font-weight: 500; color: #868E96; font-size: 11px; text-transform: uppercase; }
+    .lw-popup-tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; color: #FFF; margin-top: 6px;}
+
+    /* RESPONSIVE MOBILE */
+    @media (max-width: 500px) {
+        #lyon-widget h1 { font-size: 18px; }
+        #lyon-widget .lw-filters-row { flex-direction: column; gap: 8px; }
+        #lyon-widget .lw-legend { justify-content: flex-start; overflow-x: auto; padding-bottom: 4px; flex-wrap: nowrap; }
+        #lyon-widget .lw-pill { flex-shrink: 0; }
+    }
+  </style>
+</head>
+<body>
+
+<div id="lyon-widget">
+    <div class="lw-card">
+        <header>
+            <div class="lw-subtitle">Métropole de Lyon</div>
+            <h1>Carte des Chantiers</h1>
+            <div class="lw-meta">Suivez l'impact des travaux sur la voirie en temps réel.</div>
+        </header>
+
+        <div class="lw-controls">
+            <div class="lw-dates" id="lw-date-btns"></div>
+            
+            <div class="lw-filters-row">
+                <div class="lw-select-wrapper">
+                    <label>Durée estimée</label>
+                    <select id="lw-duration">
+                        <option value="all">Toutes durées</option>
+                        <option value="<3m">Moins de 3 mois</option>
+                        <option value="3m-6m">3 à 6 mois</option>
+                        <option value="6m-1y">6 mois à 1 an</option>
+                        <option value=">1y">Plus d'un an</option>
+                    </select>
+                </div>
+                <div class="lw-select-wrapper">
+                    <label>Type de projet</label>
+                    <select id="lw-type">
+                        <option value="all">Chargement...</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div id="lw-map-wrapper">
+            <div id="lw-map"></div>
+            
+            <!-- Loader -->
+            <div class="lw-overlay active" id="lw-loader">
+                <div class="lw-spinner"></div>
+                <span>Récupération des données...</span>
+            </div>
+            
+            <!-- Message Aucun résultat -->
+            <div class="lw-overlay" id="lw-no-results">
+                <div style="font-size:24px">🚧</div>
+                <div style="font-weight:700; color:var(--lw-orange); margin-bottom:4px">Aucun chantier trouvé</div>
+                <div>Essayez de modifier vos filtres de recherche.</div>
+            </div>
+        </div>
+
+        <div class="lw-stats-bar">
+            <div class="lw-prog-container">
+                <div class="lw-prog-header">
+                    <div class="lw-prog-title">Avancement moyen (<span id="lw-count">0</span> chantiers)</div>
+                    <div class="lw-prog-val" id="lw-prog-txt">0%</div>
+                </div>
+                <div class="lw-prog-track">
+                    <div class="lw-prog-fill" id="lw-prog-bar" style="width: 0%"></div>
+                </div>
+            </div>
+            <div class="lw-legend" id="lw-legend">
+                <!-- Généré via JS -->
+            </div>
+        </div>
+
+        <footer> 
+            <div class="lw-toggles"> 
+                <label class="lw-toggle-lbl"><input type="checkbox" id="lw-dark-check" style="display:none"><span class="lw-switch"></span> sombre</label> 
+                <label class="lw-toggle-lbl"><input type="checkbox" id="lw-cb-check" style="display:none"><span class="lw-switch"></span> daltonien</label> 
+            </div> 
+            <div class="lw-source-credit">Source : <b>Grand Lyon Data</b></div>
+        </footer>
+    </div>
+</div>
+
+<script>
+(function() {
+    // =============================================================
+    // CONFIGURATION
+    // =============================================================
+    const API_URL = 'https://data.grandlyon.com/geoserver/metropole-de-lyon/ows?' + 
+                    'SERVICE=WFS&VERSION=2.0.0&request=GetFeature' + 
+                    '&typename=metropole-de-lyon:pvo_patrimoine_voirie.pvochantierperturbant' + 
+                    '&outputFormat=application/json&SRSNAME=EPSG:4326&sortBy=gid';
+
+    const LYON_CENTER = [45.755, 4.85];
+    const DEFAULT_ZOOM = 12;
+
+    const RANGES = {
+        default: [
+            { min: 0,  max: 25,  c: '#E33633', label: '0-25%' },
+            { min: 25, max: 50,  c: '#FF8800', label: '25-50%' },
+            { min: 50, max: 75,  c: '#FFD700', label: '50-75%' },
+            { min: 75, max: 95,  c: '#00B050', label: '75-95%' },
+            { min: 95, max: 101, c: '#30A5C8', label: 'Terminé' }
+        ],
+        colorblind: [
+            { min: 0,  max: 25,  c: '#D55E00', label: '0-25%' }, 
+            { min: 25, max: 50,  c: '#E69F00', label: '25-50%' },
+            { min: 50, max: 75,  c: '#009E73', label: '50-75%' },
+            { min: 75, max: 95,  c: '#F0E442', label: '75-95%' },
+            { min: 95, max: 101, c: '#0072B2', label: 'Terminé' }
+        ]
+    };
+    const UNKNOWN_COLOR = '#AAAAAA';
+
+    const DATE_OPTIONS = [
+        { value: 'today', text: 'Aujourd\'hui' },
+        { value: '+1w', text: '+1 Semaine' },
+        { value: '+1m', text: '+1 Mois' }
+    ];
+
+    const state = {
+        map: null, data: null, layer: null,
+        filters: { date: 'today', dur: 'all', type: 'all', progRange: null },
+        palette: 'default',
+        counts: { total: 0, filtered: 0, sumProg: 0 }
+    };
+
+    // =============================================================
+    // UTILITAIRES
+    // =============================================================
+    function parseDate(d) {
+        if (!d) return null;
+        const date = new Date(d.replace(/-/g, '/').replace('T', ' ').split('.')[0]);
+        return (isNaN(date) || date.getFullYear() < 1900) ? null : date;
+    }
+    function formatDate(date) {
+        if (!date) return 'Inconnue';
+        return date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
+    }
+    function getType(raw) {
+        if (!raw) return 'Voirie générale';
+        const s = String(raw).toLowerCase();
+        if (s.match(/bhns|trolleybus|bus/)) return 'Transports (Bus)';
+        if (s.match(/metro|m\s*\d+/)) return 'Métro';
+        if (s.match(/tramway|t\s*\d+/)) return 'Tramway';
+        if (s.match(/voie\s*lyonnaise|vl\s*\d+|cyclable|velo/)) return 'Voies Lyonnaises';
+        if (s.match(/pieton|trottoir/)) return 'Piétons';
+        if (s.match(/eau|assainissement|egout/)) return "Réseau Eau";
+        if (s.match(/gaz|electricite|enedis|grdf|chauffage/)) return 'Énergie';
+        if (s.match(/telecom|fibre/)) return 'Télécoms';
+        return 'Travaux de voirie';
+    }
+    function cleanCommune(raw) {
+        if (!raw || !raw.trim() || raw.toUpperCase() === 'METROPOLE') return 'Métropole';
+        let s = raw.trim();
+        const match = s.match(/^lyon\s*[\-\s]*0?([1-9])(?:e|ème|er)?/i);
+        if (match) return `Lyon ${match[1]}e`;
+        return s.toLowerCase().replace(/(?:^|\s|-)\S/g, a => a.toUpperCase());
+    }
+    function getDuration(p) {
+        const s = parseDate(p.debutchantier), e = parseDate(p.finchantier);
+        if(!s || !e) return null;
+        const diffDays = Math.ceil(Math.abs(e - s) / (1000 * 60 * 60 * 24));
+        if (diffDays < 90) return '<3m';
+        if (diffDays <= 180) return '3m-6m';
+        if (diffDays <= 365) return '6m-1y';
+        return '>1y';
+    }
+    function getProg(p, targetDate) {
+        const s = parseDate(p.debutchantier), e = parseDate(p.finchantier);
+        if(!s || !e) return null;
+        if(targetDate >= e) return 100;
+        if(targetDate < s) return 0;
+        return Math.round(((targetDate - s)/(e - s))*100);
+    }
+    function getColor(pct) {
+        if(pct === null) return UNKNOWN_COLOR;
+        const r = RANGES[state.palette].find(r => pct >= r.min && pct < r.max);
+        return r ? r.c : RANGES[state.palette][RANGES[state.palette].length-1].c;
+    }
+
+    // =============================================================
+    // MOTEUR
+    // =============================================================
+    function update() {
+        if(state.layer) state.map.removeLayer(state.layer);
+        document.getElementById('lw-no-results').classList.remove('active');
+
+        const targetDate = new Date();
+        targetDate.setHours(0,0,0,0);
+        if(state.filters.date === '+1w') targetDate.setDate(targetDate.getDate()+7);
+        if(state.filters.date === '+1m') targetDate.setMonth(targetDate.getMonth()+1);
+
+        const filteredFeatures = [];
+        let sumProg = 0;
+
+        state.data.features.forEach(f => {
+            const p = f.properties;
+            const prog = getProg(p, targetDate);
+            p._currentProg = prog;
+            
+            if (prog === null || prog === 100 || prog < 0) return; // Filtrer terminés/futurs
+            if (targetDate < parseDate(p.debutchantier)) return;
+
+            if (state.filters.dur !== 'all' && getDuration(p) !== state.filters.dur) return;
+            if (state.filters.type !== 'all' && getType(p.nomchantier) !== state.filters.type) return;
+            if (state.filters.progRange) {
+                const { min, max } = state.filters.progRange;
+                if (prog < min || prog >= max) return;
+            }
+
+            filteredFeatures.push(f);
+            sumProg += prog;
+        });
+
+        state.counts.filtered = filteredFeatures.length;
+        state.counts.sumProg = sumProg;
+
+        if (filteredFeatures.length === 0) {
+            document.getElementById('lw-no-results').classList.add('active');
+        } else {
+            renderMap(filteredFeatures);
+        }
+        renderStats();
+        renderLegend();
+    }
+
+    function renderMap(features) {
+        state.layer = L.geoJSON(features, {
+            pointToLayer: (feature, latlng) => {
+                return L.circleMarker(latlng, {
+                    radius: 7,
+                    fillColor: getColor(feature.properties._currentProg),
+                    color: "#FFF", weight: 1.5, opacity: 1, fillOpacity: 0.9
+                });
+            },
+            style: (feature) => {
+                // Si c'est une ligne ou un polygone
+                return {
+                    color: getColor(feature.properties._currentProg),
+                    weight: 4, opacity: 0.8, lineCap: 'round'
+                };
+            },
+            onEachFeature: (feature, layer) => {
+                const p = feature.properties;
+                const name = (p.nomchantier || 'Chantier').toUpperCase();
+                const comm = cleanCommune(p.commune1);
+                const dates = `${formatDate(parseDate(p.debutchantier))} → ${formatDate(parseDate(p.finchantier))}`;
+                const color = getColor(p._currentProg);
+                
+                const content = `
+                    <div class="lw-popup-header"><h3>${name}</h3></div>
+                    <div class="lw-popup-body">
+                        <div class="lw-popup-row">
+                            <div><div class="lw-popup-label">Lieu</div>${comm}</div>
+                            <div style="text-align:right"><div class="lw-popup-label">Type</div>${getType(p.nomchantier)}</div>
+                        </div>
+                        <div class="lw-popup-label" style="margin-top:8px">Calendrier</div>
+                        <div>${dates}</div>
+                        <div class="lw-popup-tag" style="background:${color}">Avancement : ${p._currentProg}%</div>
+                    </div>
+                `;
+                layer.bindPopup(content);
+                
+                layer.on('mouseover', function() { 
+                    if(this.setStyle) this.setStyle({ weight: 7, opacity: 1, fillOpacity: 1, radius: 9 }); 
+                });
+                layer.on('mouseout', function() { 
+                    if(this.setStyle) this.setStyle({ weight: 4, opacity: 0.8, fillOpacity: 0.9, radius: 7 }); 
+                });
+            }
+        }).addTo(state.map);
+    }
+
+    function renderStats() {
+        const count = state.counts.filtered;
+        const avg = count > 0 ? Math.round(state.counts.sumProg / count) : 0;
+        document.getElementById('lw-count').innerText = count;
+        document.getElementById('lw-prog-txt').innerText = `${avg}%`;
+        document.getElementById('lw-prog-bar').style.width = `${avg}%`;
+    }
+
+    function renderLegend() {
+        const container = document.getElementById('lw-legend');
+        container.innerHTML = '';
+        
+        // Bouton "Tout"
+        const allBtn = document.createElement('div');
+        const isAll = state.filters.progRange === null;
+        allBtn.className = `lw-pill ${isAll ? 'active' : 'dimmed'}`;
+        allBtn.innerHTML = `<span>Tous</span>`;
+        allBtn.onclick = () => { state.filters.progRange = null; update(); };
+        container.appendChild(allBtn);
+
+        RANGES[state.palette].forEach(r => {
+            const isActive = state.filters.progRange && state.filters.progRange.min === r.min;
+            const isDimmed = !isAll && !isActive;
+            const item = document.createElement('div');
+            item.className = `lw-pill ${isActive ? 'active' : ''} ${isDimmed ? 'dimmed' : ''}`;
+            item.innerHTML = `<span class="lw-dot" style="background:${r.c}"></span> ${r.label}`;
+            item.onclick = () => {
+                state.filters.progRange = isActive ? null : { min: r.min, max: r.max };
+                update();
+            };
+            container.appendChild(item);
+        });
+    }
+
+    // =============================================================
+    // INIT
+    // =============================================================
+    function init() {
+        // 1. Init Map structure immediately
+        state.map = L.map('lw-map', { zoomControl: false }).setView(LYON_CENTER, DEFAULT_ZOOM);
+        L.control.zoom({ position: 'topright' }).addTo(state.map);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png', {
+            maxZoom: 19, attribution: '&copy; OpenStreetMap, &copy; CARTO'
+        }).addTo(state.map);
+
+        // 2. Init Controls
+        const dateWrapper = document.getElementById('lw-date-btns');
+        DATE_OPTIONS.forEach(opt => {
+            const btn = document.createElement('div');
+            btn.className = `lw-date-btn ${state.filters.date === opt.value ? 'active' : ''}`;
+            btn.textContent = opt.text;
+            btn.onclick = () => {
+                state.filters.date = opt.value;
+                document.querySelectorAll('.lw-date-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                update();
+            };
+            dateWrapper.appendChild(btn);
+        });
+
+        // 3. Fetch Data Async
+        fetch(API_URL)
+            .then(r => r.json())
+            .then(json => {
+                document.getElementById('lw-loader').classList.remove('active');
+                state.data = json;
+                
+                // Populate Types
+                const types = new Set(json.features.map(f => getType(f.properties.nomchantier)));
+                const typeSelect = document.getElementById('lw-type');
+                typeSelect.innerHTML = '<option value="all">Tous les types</option>';
+                [...types].sort().forEach(t => {
+                    const opt = document.createElement('option');
+                    opt.value = t; opt.textContent = t;
+                    typeSelect.appendChild(opt);
+                });
+
+                renderLegend();
+                update();
+            })
+            .catch(e => {
+                console.error(e);
+                document.getElementById('lw-loader').innerHTML = '<span style="color:#E65100; font-weight:bold">Erreur de chargement des données</span>';
+            });
+
+        // Listeners
+        document.getElementById('lw-duration').onchange = e => { state.filters.dur = e.target.value; update(); };
+        document.getElementById('lw-type').onchange = e => { state.filters.type = e.target.value; update(); };
+        
+        document.getElementById('lw-dark-check').onchange = e => {
+            document.getElementById('lyon-widget').classList.toggle('lw-dark', e.target.checked);
+        };
+        document.getElementById('lw-cb-check').onchange = e => {
+            state.palette = e.target.checked ? 'colorblind' : 'default';
+            renderLegend();
+            update();
+        };
+    }
+
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+    else init();
+
+})();
+</script>
+</body>
+</html>
